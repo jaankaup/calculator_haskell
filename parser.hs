@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 
-{- Yksinkertainen Haskelilla toteutettu tulkki. 
+{- Yksinkertainen ohjelma aritmeettisten lausekkeiden laskentaan. 
    Copyright: Janne Kauppinen.
    Version 0.00001 alpha. 
    None rights reserved.
@@ -16,6 +16,18 @@ module Parser where
 
 import Data.Char (isDigit)
 import Data.List (stripPrefix)
+import Data.Monoid
+import Control.Applicative
+ 
+type Writer a = (a,String)
+
+(>=>) :: (a -> Writer b) -> (b -> Writer c) -> a -> Writer c
+m1 >=> m2 = \x -> let (r1,s) = m1 x
+                      (r2,s') = m2 r1 
+                  in (r2, s <> s')
+
+return :: a -> Writer a
+return x = (x,mempty)
 
 newtype Fix f = Fx (f (Fix f)) 
 
@@ -73,13 +85,12 @@ testExpS = Fx $ (:+) (Fx $ C "kissa ") (Fx $ C "istuu!")
 
 test = Fx $ (:*) (Fx $ C 5) (Fx $ C 3)
 
-
 -- Jasennin-osio
 
 newtype Parser a = P (String -> Maybe (a,String))
 
 instance Functor Parser where
-   fmap f (P x) = P (fmap (\(x,s) -> (f x, s)) . x)
+   fmap f (P fx) = P (fmap (\(x,s) -> (f x, s)) . fx)
 
 instance Applicative Parser where
    pure x = P $ \s -> Just (x,s)
@@ -95,7 +106,6 @@ instance Monoid (Parser a) where
                              Just a  -> Just a
                              Nothing -> runParser b x   
 
-
 runParser :: Parser a -> String -> Maybe (a,String)
 runParser (P f) = f
 
@@ -107,11 +117,57 @@ takeP p = P $ \x -> case span p x of
                      ("",_) -> Nothing
                      r      -> Just r  
 
+takeOneP :: (Char -> Bool) -> Parser String
+takeOneP p = P $ \x -> case x of
+                         ""     -> Nothing
+                         (y:ys) -> if p y then Just ([y],ys) else Nothing    
+
+takeOneD :: Parser Int
+takeOneD = fmap read $ takeOneP isDigit 
+
 int :: Parser Int
-int = fmap read (takeP isDigit)
+int = fmap read $ takeP isDigit
 
 string :: String -> Parser String
 string s = P $ \x -> case stripPrefix s x of
                        Nothing -> Nothing
-                       Just e  -> Just (s,e)     
-                        
+                       Just e  -> Just (s,e)
+
+-- Kontekstiton kielioppi, joka tuottaa doublen:
+-- S -> minus A | digit A | digit B | d
+-- A -> digit A | digit B | d
+-- B -> eeC     | digit D 
+-- C -> plus F  | minus F | digit F | d
+-- D -> digit E | d
+-- E -> ee C
+-- F -> digit F | d
+-- plus  -> +  
+-- minus -> -
+-- ee    -> e
+-- dot   -> .
+-- digit -> d
+--
+-- Pitaisi nyt olla Chomscyn normaali muodossa. Tosin Haskelissa on hieman oikaistu yksittaisten digit:ien kanssa. Ne pitaisi ainakin teoriassa olla paatemerkkeja eika valikemerkkeja. 
+-- Tosin kielioppi ei tarkista sita, onko jasennetty merkkijono lukualueeltaan liian suuri tai pieni mahtumaan doubleen. Ts. voi tulla Infinity tai -Infinity. 
+double :: Parser Double
+double = P $ \x -> let s = (minus +++ a) <> (digit +++ a) <> (digit +++ b) <> digit
+                       a = (digit +++ a) <> (digit +++ b) <> digit
+                       b = (ee +++ c) <> (dot +++ d) 
+                       c = (plus +++ f) <> (minus +++ f) <> (digit +++ f) <> digit 
+                       d = (digit +++ e) <> digit 
+                       e = ee +++ c 
+                       f = (digit +++ f) <> digit 
+                       plus   = string "+" 
+                       minus  = string "-"
+                       ee     = string "e"
+                       dot    = string "."
+                       digit  = toString takeOneD
+                   in case runParser s x of 
+                        Nothing            -> Nothing
+                        Just (result,rest) -> Just (read result, rest)
+
+toString :: Show a => Parser a -> Parser String 
+toString pa = fmap show pa
+
+(+++) :: Parser String -> Parser String -> Parser String
+pa +++ pb = pure (++) <*> pa <*> pb
