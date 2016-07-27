@@ -8,7 +8,7 @@
 
 {- Yksinkertainen ohjelma aritmeettisten lausekkeiden laskentaan. 
    Copyright: Janne Kauppinen.
-   Version 0.00001 alpha. 
+   Version 0.00002 alpha. 
    None rights reserved.
  -}
 
@@ -20,6 +20,7 @@ import Data.Monoid
 import Control.Applicative
  
 type Writer a = (a,String)
+
 
 (>=>) :: (a -> Writer b) -> (b -> Writer c) -> a -> Writer c
 m1 >=> m2 = \x -> let (r1,s) = m1 x
@@ -58,11 +59,18 @@ instance Num a => Eval (Expr a) a where
   evalAlgebra ((:*) x y) = x * y
 --  evalAlgebra ((:/) x y) = x `div` y -- TODO: jako nollalla!
 
+cout (C x) = show x
+cout ((:+) x y) = show x ++ " + " ++ show y
+cout ((:-) x y) = show x ++ " - " ++ show y
+cout ((:*) x y) = show x ++ " * " ++ show y
+
 unFx :: Fix f -> (f (Fix f))
 unFx (Fx x) = x
 
 cata :: Functor f => (f a -> a) -> Fix f -> a
 cata algebra = algebra . fmap (cata algebra) . unFx
+
+--cata2 algebra = algebra . fmap (\x -> (cata algebra, show . unFx))
 
 alg :: IntAlgebra 
 alg (C x) = x
@@ -106,6 +114,29 @@ instance Monoid (Parser a) where
                              Just a  -> Just a
                              Nothing -> runParser b x   
 
+expr2 :: Parser (Fix (Expr Double))
+expr2 = ex 
+     where ex = add <> sub <> p1 
+           p1 = mult <> p2 
+           p2 = const <> par ex   
+           const = fmap (Fx . C) double 
+           add = fmap Fx $ pure (:+) <*> (p1 <* string "+") <*> ex
+           sub = fmap Fx $ pure (:-) <*> (p1 <* string "-") <*> ex
+           mult = fmap Fx $ pure (:*) <*> (p2 <* string "*") <*> p1
+             
+
+multD :: Parser DoubleExpr 
+multD = exp
+          where exp = fmap Fx $ pure (:*) <*> cons <*> cons 
+                cons = pure (Fx . C) <*> (a <* b) 
+                a   = (string " " *> a) <> double 
+                b   = (string " " *> b) <> (string "*")
+
+evaluate a s = case runParser a s of
+                 Nothing -> Nothing
+                 Just (v,"") -> Just $ cata evalAlgebra v
+                 Just _      -> Nothing
+
 runParser :: Parser a -> String -> Maybe (a,String)
 runParser (P f) = f
 
@@ -128,15 +159,27 @@ takeOneD = fmap read $ takeOneP isDigit
 int :: Parser Int
 int = fmap read $ takeP isDigit
 
+number :: Parser Int
+number = int <> (fmap read $ string "-" +++ toString int) 
+
 string :: String -> Parser String
 string s = P $ \x -> case stripPrefix s x of
                        Nothing -> Nothing
                        Just e  -> Just (s,e)
 
+par :: Parser a -> Parser a
+par = between "(" ")"
+
+between :: String -> String -> Parser a -> Parser a
+between l r p = (string l) *> p <* (string r)
+
+--fxParser :: Parser (Expr a b) -> Parser (Fix (Expr a))
+--fxParser = fmap Fx
+
 -- Kontekstiton kielioppi, joka tuottaa doublen:
 -- S -> minus A | digit A | digit B | d
 -- A -> digit A | digit B | d
--- B -> eeC     | digit D 
+-- B -> ee C    | digit D 
 -- C -> plus F  | minus F | digit F | d
 -- D -> digit E | d
 -- E -> ee C
@@ -147,17 +190,21 @@ string s = P $ \x -> case stripPrefix s x of
 -- dot   -> .
 -- digit -> d
 --
--- Pitaisi nyt olla Chomscyn normaali muodossa. Tosin Haskelissa on hieman oikaistu yksittaisten digit:ien kanssa. Ne pitaisi ainakin teoriassa olla paatemerkkeja eika valikemerkkeja. 
--- Tosin kielioppi ei tarkista sita, onko jasennetty merkkijono lukualueeltaan liian suuri tai pieni mahtumaan doubleen. Ts. voi tulla Infinity tai -Infinity. 
+-- Pitaisi nyt olla Chomskyn normaalimuodossa. Tosin Haskelissa on hieman oikaistu
+-- yksittaisten digit:ien kanssa. Ne pitaisi ainakin teoriassa olla paatemerkkeja
+-- eika valikemerkkeja ollessaan ainoana merkkina. Tosin kielioppi ei tarkista
+-- sita, onko jasennetty merkkijono lukualueeltaan liian suuri tai pieni mahtumaan
+-- doubleen. Ts. voi tulla Infinity tai -Infinity. 
+
 double :: Parser Double
 double = P $ \x -> let s = (minus +++ a) <> (digit +++ a) <> (digit +++ b) <> digit
                        a = (digit +++ a) <> (digit +++ b) <> digit
                        b = (ee +++ c) <> (dot +++ d) 
                        c = (plus +++ f) <> (minus +++ f) <> (digit +++ f) <> digit 
-                       d = (digit +++ e) <> digit 
+                       d = (digit +++ e) <> f--digit 
                        e = ee +++ c 
-                       f = (digit +++ f) <> digit 
-                       plus   = string "+" 
+                       f = (digit +++ f) <> digit
+                       plus   = string "+"
                        minus  = string "-"
                        ee     = string "e"
                        dot    = string "."
@@ -171,3 +218,6 @@ toString pa = fmap show pa
 
 (+++) :: Parser String -> Parser String -> Parser String
 pa +++ pb = pure (++) <*> pa <*> pb
+
+main = do 
+      putStrLn $ cata cout testExp 
