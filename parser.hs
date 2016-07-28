@@ -8,7 +8,7 @@
 
 {- Yksinkertainen ohjelma aritmeettisten lausekkeiden laskentaan. 
    Copyright: Janne Kauppinen.
-   Version 0.00002 alpha. 
+   Version 0.00003 alpha. 
    None rights reserved.
  -}
 
@@ -18,6 +18,7 @@ import Data.Char (isDigit)
 import Data.List (stripPrefix)
 import Data.Monoid
 import Control.Applicative
+import Control.Monad (unless)
  
 type Writer a = (a,String)
 
@@ -29,6 +30,21 @@ m1 >=> m2 = \x -> let (r1,s) = m1 x
 
 return :: a -> Writer a
 return x = (x,mempty)
+
+--newtype EitherT a m b = EitherT { runEitherT :: m (Either a b)}
+--
+--instance Monad (Either e) where
+--  return = Right
+--  Right m >>= k = k m
+--  Left e  >>= _ = Left e
+--
+--instance Applicative (Either e) where
+--  pure = Right
+--  a <*> b = do x <- a; y <- b; Control.Monad.return (x y)
+--
+--instance Functor f => Functor (EitherT a f) where
+--  fmap f = EitherT . fmap (fmap f) . runEitherT
+
 
 newtype Fix f = Fx (f (Fix f)) 
 
@@ -173,15 +189,12 @@ par = between "(" ")"
 between :: String -> String -> Parser a -> Parser a
 between l r p = (string l) *> p <* (string r)
 
---fxParser :: Parser (Expr a b) -> Parser (Fix (Expr a))
---fxParser = fmap Fx
-
 -- Kontekstiton kielioppi, joka tuottaa doublen:
 -- S -> MA | ZA | ZB | d
 -- A -> ZA | ZB | d
 -- B -> XC | YZ 
 -- C -> PF | MF | ZF | d
--- D -> ZD | ZE | d
+-- D -> ZD | ZE | f
 -- E -> XC
 -- F -> ZF | d
 -- P -> +
@@ -231,5 +244,22 @@ testFunc s = let x = (runParser double) s
                        Just (d,"") -> "Passed"
                        Just (d, (x:xs)) -> "Failed"
              in ("INPUT = " ++ s ++ " PARSED = " ++ show x ++ " TEST RESULT = " ++ p) 
-main = do 
-      putStrLn $ cata cout testExp 
+
+check input = case evaluate expr2 input of
+                Nothing -> "Syntaksi virhe tai jotain..."
+                Just v  -> "Vastaus on " ++ show v
+
+ask :: IO String
+ask = do
+        putStr "Anna arimeettien lauseke (+-*/) > "
+        a <- getLine 
+        if a == "q" then Prelude.return "quit" else Prelude.return (check a)
+
+loop :: IO ()
+loop = do 
+         result <- ask
+         if result == "quit" then print "" else putStrLn result
+         unless (result == "quit") loop
+
+main = loop    
+   
