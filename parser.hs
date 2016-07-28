@@ -177,18 +177,18 @@ between l r p = (string l) *> p <* (string r)
 --fxParser = fmap Fx
 
 -- Kontekstiton kielioppi, joka tuottaa doublen:
--- S -> minus A | digit A | digit B | d
--- A -> digit A | digit B | d
--- B -> ee C    | digit D 
--- C -> plus F  | minus F | digit F | d
--- D -> digit E | d
--- E -> ee C
--- F -> digit F | d
--- plus  -> +  
--- minus -> -
--- ee    -> e
--- dot   -> .
--- digit -> d
+-- S -> MA | ZA | ZB | d
+-- A -> ZA | ZB | d
+-- B -> XC | YZ 
+-- C -> PF | MF | ZF | d
+-- D -> ZD | ZE | d
+-- E -> XC
+-- F -> ZF | d
+-- P -> +
+-- M -> -
+-- X -> e
+-- Y -> .
+-- Z -> d
 --
 -- Pitaisi nyt olla Chomskyn normaalimuodossa. Tosin Haskelissa on hieman oikaistu
 -- yksittaisten digit:ien kanssa. Ne pitaisi ainakin teoriassa olla paatemerkkeja
@@ -201,7 +201,7 @@ double = P $ \x -> let s = (minus +++ a) <> (digit +++ a) <> (digit +++ b) <> d
                        a = (digit +++ a) <> (digit +++ b) <> digit
                        b = (ee +++ c) <> (dot +++ d) 
                        c = (plus +++ f) <> (minus +++ f) <> (digit +++ f) <> digit 
-                       d = (digit +++ e) <> f--digit 
+                       d = (digit +++ d) <> (digit +++ e) <> f
                        e = ee +++ c 
                        f = (digit +++ f) <> digit
                        plus   = string "+"
@@ -219,5 +219,17 @@ toString pa = fmap show pa
 (+++) :: Parser String -> Parser String -> Parser String
 pa +++ pb = pure (++) <*> pa <*> pb
 
+doubleTest :: IO ()
+doubleTest = do
+               let testStrs = ["1","-1","1874","-1874","18.74","-18.74","18.74e3","18.74e+3","18.74e-3",
+                               "-18.74e3","-18.74e+3","-18.74e-3","187e3","187e+3","187e-3","-187e3","-187e+3","-187e-3","123.5e3"]
+               mapM_ (putStrLn . testFunc) testStrs 
+
+testFunc s = let x = (runParser double) s 
+                 p = case x of
+                       Nothing -> "Failed"
+                       Just (d,"") -> "Passed"
+                       Just (d, (x:xs)) -> "Failed"
+             in ("INPUT = " ++ s ++ " PARSED = " ++ show x ++ " TEST RESULT = " ++ p) 
 main = do 
       putStrLn $ cata cout testExp 
