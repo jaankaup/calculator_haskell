@@ -20,32 +20,6 @@ import Data.Monoid
 import Control.Applicative
 import Control.Monad (unless)
  
-type Writer a = (a,String)
-
-
-(>=>) :: (a -> Writer b) -> (b -> Writer c) -> a -> Writer c
-m1 >=> m2 = \x -> let (r1,s) = m1 x
-                      (r2,s') = m2 r1 
-                  in (r2, s <> s')
-
-return :: a -> Writer a
-return x = (x,mempty)
-
---newtype EitherT a m b = EitherT { runEitherT :: m (Either a b)}
---
---instance Monad (Either e) where
---  return = Right
---  Right m >>= k = k m
---  Left e  >>= _ = Left e
---
---instance Applicative (Either e) where
---  pure = Right
---  a <*> b = do x <- a; y <- b; Control.Monad.return (x y)
---
---instance Functor f => Functor (EitherT a f) where
---  fmap f = EitherT . fmap (fmap f) . runEitherT
-
-
 newtype Fix f = Fx (f (Fix f)) 
 
 type Algebra f a = Functor f => f a -> a 
@@ -68,12 +42,12 @@ type StringAlgebra = Algebra (Expr String) String
 class Functor f => Eval f a | f -> a where
   evalAlgebra :: f a -> a
 
-instance Num a => Eval (Expr a) a where
+instance RealFrac a => Eval (Expr a) a where
   evalAlgebra (C x) = x 
   evalAlgebra ((:+) x y) = x + y
   evalAlgebra ((:-) x y) = x - y
   evalAlgebra ((:*) x y) = x * y
---  evalAlgebra ((:/) x y) = x `div` y -- TODO: jako nollalla!
+  evalAlgebra ((:/) x y) = x / y -- TODO: jako nollalla!
 
 cout (C x) = show x
 cout ((:+) x y) = show x ++ " + " ++ show y
@@ -133,13 +107,13 @@ instance Monoid (Parser a) where
 expr2 :: Parser (Fix (Expr Double))
 expr2 = ex 
      where ex = add <> sub <> p1 
-           p1 = mult <> p2 
+           p1 = mult <> div <> p2 
            p2 = const <> par ex   
            const = fmap (Fx . C) double 
            add = fmap Fx $ pure (:+) <*> (p1 <* string "+") <*> ex
            sub = fmap Fx $ pure (:-) <*> (p1 <* string "-") <*> ex
            mult = fmap Fx $ pure (:*) <*> (p2 <* string "*") <*> p1
-             
+           div = fmap Fx $ pure (:/) <*> (p2 <* string "/") <*> p1
 
 multD :: Parser DoubleExpr 
 multD = exp
