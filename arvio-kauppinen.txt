@@ -1,0 +1,50 @@
+                TIEA241 AUTOMAATIT JA KIELIOPIT (5 op)
+                       SYKSYN 2015 LUENTOKURSSI
+               HARJOITUSTYÖN ARVIOINTI - KURSSISUORITUS
+
+Seuraava suoritus on tänään lähetetty opintorekisteriin.
+
+Opiskelija:
+  Janne Anders Kauppinen (s. 3.2.1977)
+Annettu arvioitavaksi:
+  - lähdekoodi  18.8.2016
+  - kirjoitelma 18.8.2016
+Suorituspäivä:  18.8.2016
+Kurssiarvosana: 5
+Perustelut:
+
+Kauppiselle on myönnetty lisäaikaa harjoitustyön palauttamiseen
+24.8.2016 asti, joten työ on palautettu ajoissa.
+
+Janne Kauppisen harjoitustyö on 155-rivinen ("generated using David
+A. Wheeler's 'SLOCCount'") Haskell-kielinen ohjelma, joka toteuttaa
+yksinkertaisen aritmeettisen laskimen.  Siihen liittyy viisisivuinen
+kirjoitelma.
+
+Ohjelma kääntyy ongelmitta ja toimii testeissäni moitteettomasti.
+
+Ohjelma perustuu kahteen lausekerakennekielioppiin.  Molemmat voisivat
+olla kontekstittomia kielioppeja (CFG) mutta niitä käsitellään parsing
+expression grammar (PEG) -formlismin mukaisesti.  Kummastakin
+kieliopista on johdettu suoraviivainen rekursiivisesti etenevä
+(peruuttava) jäsennin käyttäen jäsenninkombinaattoritekniikkaa.  PEG
+ei ole CFG, mutta ne ovat samaa sukua ja Kauppinen tarkastelee niiden
+eroja kirjoitelmassaan ansiokkaasti.  Kirjoitelmassa olisi ollut hyvä
+antaa aiheesta keskeisiä lähdeviitteitä, mutta tällä ei ole
+kokonaisuuden kannalta merkitystä.  On ilmeistä, että Kauppinen
+hallitsee tämän osan kurssin sisällöistä moitteettomasti.
+
+Ratkeavuuskysymyksiä Kauppinen tarkastelee lyhyesti mutta
+asianmukaisesti.  Virheitä ei ole havaittavissa.
+
+Havaintojeni mukaan Kauppinen on noudattanut työtä tehdessään
+akateemista rehellisyyttä.  Urkundilla ei ole huomauttamista
+kirjoitelmaan.
+
+Työ täyttää arvosanojen 1 ja 3 kriteerit ongelmitta ja työ on
+muutenkin moitteeton.  Arvosanaksi tulee siten 5.
+
+Jyväskylässä 18. elokuuta 2016
+
+
+Antti-Juhani Kaijanaho

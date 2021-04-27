@@ -7,84 +7,85 @@
 {-# LANGUAGE FunctionalDependencies #-}
 
 {- Yksinkertainen ohjelma aritmeettisten lausekkeiden laskentaan. 
+   Kaytossa ovat numerot ja seuraavat merkit: ()+-*/. Numerot ovat liukulukuja, ja myos e-merkki on mukana.
+   Esimerkkeja liukuluvuista, joita ohjelma tunnistaa: 13, -13.13, -13e-15, 13.1313e+12.
    Copyright: Janne Kauppinen.
-   Version 0.00003 alpha. 
-   None rights reserved.
+   Version 0.00004 beta. 
+   None rights reserved. Use at your own risk.
  -}
 
-module Parser where
+module Main where
 
-import Data.Char (isDigit)
+import Data.Char (isDigit,isLetter)
 import Data.List (stripPrefix)
 import Data.Monoid
 import Control.Applicative
 import Control.Monad (unless)
+import System.IO (hFlush, stdout)
+import Prelude hiding(div)
  
+-- Tyyppirakentaja tyyppien kiintopisteille.
 newtype Fix f = Fx (f (Fix f)) 
 
+-- "Saanto" sille, miten tyyppi a toimii, kun aletaan evaluoida.
 type Algebra f a = Functor f => f a -> a 
 
 data Expr a b = C a
-              | (:+) b b
-              | (:*) b b
-              | (:-) b b
-              | (:/) b b
+              | b :+ b
+              | b :- b 
+              | b :* b
+              | b :/ b
               | Par b
               deriving (Functor, Show)
 
-type IntExpr = Fix (Expr Int)
-type StringExpr = Fix (Expr String)
+-- Jasennyspuun tyyppi tassa ohjelmassa.
 type DoubleExpr = Fix (Expr Double)
 
-type IntAlgebra = Algebra (Expr Int) Int
+-- Jasennyspuun tyyppi, jos paatesymbolit ovatkin merkkijonoja. Ei kaytossa tassa ohjelmassa.
+type StringExpr = Fix (Expr String)
+
+-- Jasennyspuun tyyppi, jos kaytettaisiin Stringeja. Tosin taytyy maaritella miinus ja jako-operaatiot Stringille ensin. 
 type StringAlgebra = Algebra (Expr String) String
 
+-- Eval rajapinta.
 class Functor f => Eval f a | f -> a where
   evalAlgebra :: f a -> a
 
+-- Evaluaointia varten. Tassa ohjelmassa saanto double-tyyppisille arvoille. 
 instance RealFrac a => Eval (Expr a) a where
   evalAlgebra (C x) = x 
   evalAlgebra ((:+) x y) = x + y
   evalAlgebra ((:-) x y) = x - y
   evalAlgebra ((:*) x y) = x * y
-  evalAlgebra ((:/) x y) = x / y -- TODO: jako nollalla!
+  evalAlgebra ((:/) x y) = x / y -- Jako nollalla! Antaa Infinity:n double tapauksessa. Ei haittaa tassa ohjelmassa.
 
-cout (C x) = show x
-cout ((:+) x y) = show x ++ " + " ++ show y
-cout ((:-) x y) = show x ++ " - " ++ show y
-cout ((:*) x y) = show x ++ " * " ++ show y
-
+-- Unfiksaus. 
 unFx :: Fix f -> (f (Fix f))
 unFx (Fx x) = x
 
+-- Evaluointi-funktio. Jasennyspuu kaydaan rekursiivisesti lapi.
+-- Argumenttinä saatua algebraa sovelletaan puun solmuihin.
 cata :: Functor f => (f a -> a) -> Fix f -> a
 cata algebra = algebra . fmap (cata algebra) . unFx
 
---cata2 algebra = algebra . fmap (\x -> (cata algebra, show . unFx))
-
-alg :: IntAlgebra 
-alg (C x) = x
-alg ((:+) x y) = x + y
-alg ((:*) x y) = x * y
-
+-- Olkoon tama viela mukana demonstraation vuoksi. Nyt jos halutaan evaluoida Stringeja, niin cata funktiolle annetaan algS-algebra, niin talloin 
+-- tiedetaan miten hoidetaan Stringien aritmeettisia operaatioita. Tosin miinus ja jako-operaatioita ei ole viela keksitty :).
 algS :: StringAlgebra 
 algS (C x) = x
 algS ((:+) x y) = x ++ y
 algS ((:*) x y) = concat [[a,b] | a <- x, b <- y]
 
-testExp :: IntExpr
-testExp = Fx $ (:+) (Fx $ (:*) (Fx $ C 5) (Fx $ C 3)) (Fx $ C 9)
-
+-- Testi DoubleExpr:n.
 testExpD :: DoubleExpr
 testExpD = Fx $ (:+) (Fx $ (:*) (Fx $ C 5.1) (Fx $ C 3.1)) (Fx $ C 9.4)
 
+-- Testi StringExpr:ille.
 testExpS :: StringExpr
 testExpS = Fx $ (:+) (Fx $ C "kissa ") (Fx $ C "istuu!")
 
-test = Fx $ (:*) (Fx $ C 5) (Fx $ C 3)
-
 -- Jasennin-osio
 
+-- Jasentimen maarittely.
 newtype Parser a = P (String -> Maybe (a,String))
 
 instance Functor Parser where
@@ -95,44 +96,51 @@ instance Applicative Parser where
    fa <*> fb = P $ \s -> case runParser fa s of
                            Nothing      -> Nothing
                            Just (p,s')  -> case runParser fb s' of
-                              Nothing -> Nothing
-                              Just (x,s'') -> Just (p x, s'')
+                                             Nothing -> Nothing
+                                             Just (x,s'') -> Just (p x, s'')
 
 instance Monoid (Parser a) where
    mempty = P $ const Nothing 
    mappend a b = P $ \x -> case runParser a x of
-                             Just a  -> Just a
                              Nothing -> runParser b x   
+                             r       -> r
+-- Kielioppi:
+-- E -> T + E | T - E | T
+-- T -> P * T | P / T | P
+-- P -> (E) | c
+expr2 :: Parser DoubleExpr
+expr2 = e 
+    where e = add <> sub <> t
+          t = mult <> div <> p 
+          p = par e <> cons  
+          cons = fmap Fx $ (pure C) <*> double
+          add = fmap Fx $ pure (:+) <*> (t <* string "+") <*> e
+          sub = fmap Fx $ pure (:-) <*> (t <* string "-") <*> e
+          mult = fmap Fx $ pure (:*) <*> (p <* string "*") <*> t
+          div = fmap Fx $ pure (:/) <*> (p <* string "/") <*> t 
 
-expr2 :: Parser (Fix (Expr Double))
-expr2 = ex 
-     where ex = add <> sub <> p1 
-           p1 = mult <> div <> p2 
-           p2 = const <> par ex   
-           const = fmap (Fx . C) double 
-           add = fmap Fx $ pure (:+) <*> (p1 <* string "+") <*> ex
-           sub = fmap Fx $ pure (:-) <*> (p1 <* string "-") <*> ex
-           mult = fmap Fx $ pure (:*) <*> (p2 <* string "*") <*> p1
-           div = fmap Fx $ pure (:/) <*> (p2 <* string "/") <*> p1
-
-multD :: Parser DoubleExpr 
-multD = exp
-          where exp = fmap Fx $ pure (:*) <*> cons <*> cons 
-                cons = pure (Fx . C) <*> (a <* b) 
-                a   = (string " " *> a) <> double 
-                b   = (string " " *> b) <> (string "*")
-
+-- Ensimmainen evaluointi-funktio. Jos jasennin epaonnistuu tai jos syotetta jaa lukematta, niin palautetaan Nothing. 
+-- Jos taas jasennys onnistuu ja syote on luettu loppuun, niin kutsutaan varsinaista jasennys funktiota (cata).
 evaluate a s = case runParser a s of
-                 Nothing -> Nothing
-                 Just (v,"") -> Just $ cata evalAlgebra v
-                 Just _      -> Nothing
+                 Nothing         -> Nothing
+                 Just (v,"")     -> Just $ cata evalAlgebra v
+                 Just (_,(x:xs)) -> Nothing
 
 runParser :: Parser a -> String -> Maybe (a,String)
 runParser (P f) = f
 
-execParser :: Parser a -> String -> Maybe a
-execParser (P f) = fmap fst . f
+-- Funktio, joka muodostaa kahdesta jasentimesta uuden jasentimen. Toimintalogiikka on seuraava: pa (not)pb. Eli uusi jasennin testaa 
+-- sellaista tilannetta, etta vain ensimmainen jasennin onnistuu, ja toisen taytyy epaonnistua. Jos nain kay, niin palautetaan ensimmaisen 
+-- jasentimen tulos. Tata ei kayteta tassa ohjelmassa, mutta talla yritettiin saada PEG-kielioppi toimimaan siten, etta ensin testattaisiin 
+-- onko numero, mutta sita ei seuraa +-*/ merkkeja. Tama ei kuitenkaan ratkaissut eksponettiaalisen ajan ongelmaa, vaan siirti ko. ongelmaa muualle.
+fstNotSnd :: Parser a -> Parser b -> Parser a
+fstNotSnd pa pb = P $ \s -> case runParser pa s of
+                             Nothing     -> Nothing
+                             Just (x,s') -> case runParser pb s' of
+                               Nothing -> Just (x,s')
+                               _       -> Nothing 
 
+-- Seuraavaksi joukko "primitiivi"-jasentajia, joiden avulla saadaan kasattua monimutkaisemia jasentimia.
 takeP :: (Char -> Bool) -> Parser String
 takeP p = P $ \x -> case span p x of
                      ("",_) -> Nothing
@@ -179,10 +187,9 @@ between l r p = (string l) *> p <* (string r)
 --
 -- Pitaisi nyt olla Chomskyn normaalimuodossa. Tosin Haskelissa on hieman oikaistu
 -- yksittaisten digit:ien kanssa. Ne pitaisi ainakin teoriassa olla paatemerkkeja
--- eika valikemerkkeja ollessaan ainoana merkkina. Tosin kielioppi ei tarkista
+-- eika valikemerkkeja ollessaan ainoana merkkina. Kielioppi ei tarkista
 -- sita, onko jasennetty merkkijono lukualueeltaan liian suuri tai pieni mahtumaan
 -- doubleen. Ts. voi tulla Infinity tai -Infinity. 
-
 double :: Parser Double
 double = P $ \x -> let s = (minus +++ a) <> (digit +++ a) <> (digit +++ b) <> digit
                        a = (digit +++ a) <> (digit +++ b) <> digit
@@ -206,34 +213,48 @@ toString pa = fmap show pa
 (+++) :: Parser String -> Parser String -> Parser String
 pa +++ pb = pure (++) <*> pa <*> pb
 
-doubleTest :: IO ()
-doubleTest = do
-               let testStrs = ["1","-1","1874","-1874","18.74","-18.74","18.74e3","18.74e+3","18.74e-3",
-                               "-18.74e3","-18.74e+3","-18.74e-3","187e3","187e+3","187e-3","-187e3","-187e+3","-187e-3","123.5e3"]
-               mapM_ (putStrLn . testFunc) testStrs 
+-- Doublen jasentimen testitapaukset. Tassa ei valttamatta ole kaikkia mahdollisia testitatauksia, vaan joitakin tarkeimpia.
+doubles :: [String]
+doubles = ["1","-1","1874","-1874","18.74","-18.74","18.74e3","18.74e+3","18.74e-3",
+           "-18.74e3","-18.74e+3","-18.74e-3","187e3","187e+3","187e-3","-187e3","-187e+3","-187e-3","123.5e3"]
 
-testFunc s = let x = (runParser double) s 
-                 p = case x of
-                       Nothing -> "Failed"
-                       Just (d,"") -> "Passed"
-                       Just (d, (x:xs)) -> "Failed"
-             in ("INPUT = " ++ s ++ " PARSED = " ++ show x ++ " TEST RESULT = " ++ p) 
+-- Testausfunktio.
+doTest :: (String -> String) -> [String] -> IO ()
+doTest tFunc inputs = do mapM_ (putStrLn . tFunc) inputs 
 
+-- Doublen jasentimen testausfunktio.
+testDoubleFunc s = let x = (runParser double) s 
+                       p = case x of
+                             Nothing -> "Failed"
+                             Just (d,"") -> "Passed"
+                             Just (d, (x:xs)) -> "Failed"
+                   in ("INPUT = " ++ s ++ " PARSED = " ++ show x ++ " TEST RESULT = " ++ p) 
+
+-- Varsinainen double testaus.
+testDouble = doTest testDoubleFunc doubles
+
+-- Funktio, joka evaluoi annetun merkkijonon, ja antaa merkkijonona joko virheilmoituksen tai lausekkeen tuloksen.
 check input = case evaluate expr2 input of
                 Nothing -> "Syntaksi virhe tai jotain..."
                 Just v  -> "Vastaus on " ++ show v
 
+-- "Funktio", joka kysyy kayttajalta syotetta. Jos kayttaja antaa merkkijonon "q",
+-- niin palautetaan IO monadin sisalla merkkijonon "quit", muutoin palautetaan kayttajan antama syote.
 ask :: IO String
 ask = do
-        putStr "Anna arimeettien lauseke (+-*/) > "
+        putStr "Anna arimeettien lauseke, joka koostuu merkeista ()+-*/0123456789e. Poistu antamalla kirjain q. > "
+        hFlush stdout
         a <- getLine 
         if a == "q" then Prelude.return "quit" else Prelude.return (check a)
 
+-- Ohjelman paasilmukka.
 loop :: IO ()
 loop = do 
          result <- ask
          if result == "quit" then print "" else putStrLn result
          unless (result == "quit") loop
 
-main = loop    
-   
+-- Paaohjelma.
+main = do     
+          print "Ohjelma yksinkertaisten aritmeettisten lausekkeiden laskemiseen. Author Janne Kauppinen. Copyright: None."
+          loop 
